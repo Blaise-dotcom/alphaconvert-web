@@ -125,20 +125,27 @@ def _rapi_download(url: str, platform: str, format_type: str) -> tuple:
                     return _save_stream(dl_url, title, ext), title
 
         elif platform == "instagram":
-            r = httpx.post("https://instagram120.p.rapidapi.com/api/instagram/links",
-                json={"url": url},
-                headers={"X-RapidAPI-Key": key, "X-RapidAPI-Host": "instagram120.p.rapidapi.com",
-                         "Content-Type": "application/json"}, timeout=30)
-            logger.info(f"Instagram120: {r.status_code} | {r.text[:200]}")
+            r = httpx.get("https://instagram120.p.rapidapi.com/api/instagram/hls",
+                params={"url": url},
+                headers={"X-RapidAPI-Key": key, "X-RapidAPI-Host": "instagram120.p.rapidapi.com"}, timeout=30)
+            logger.info(f"Instagram120 hls: {r.status_code} | {r.text[:300]}")
             if r.status_code == 200:
                 d = r.json()
-                links = d if isinstance(d, list) else d.get("links", d.get("data", []))
-                video_url = None
-                for item in (links if isinstance(links, list) else [links]):
-                    href = item.get("link") or item.get("url") or item.get("href") or item.get("src")
-                    if href:
-                        video_url = href
-                        break
+                def _find_video(obj):
+                    if isinstance(obj, dict):
+                        for k, v in obj.items():
+                            if k in ("video_url", "url", "src", "link") and isinstance(v, str) and "http" in v:
+                                return v
+                            if k == "video_versions" and isinstance(v, list) and v:
+                                return v[0].get("url")
+                            r2 = _find_video(v)
+                            if r2: return r2
+                    elif isinstance(obj, list):
+                        for item in obj:
+                            r2 = _find_video(item)
+                            if r2: return r2
+                    return None
+                video_url = _find_video(d)
                 if video_url:
                     ext = ".mp3" if format_type == "mp3" else ".mp4"
                     return _save_stream(video_url, "instagram_video", ext), "Instagram"

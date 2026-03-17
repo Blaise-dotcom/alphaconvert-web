@@ -182,6 +182,7 @@ function updatePremiumBadge() {
 // ── TABS ─────────────────────────────────────────────────────
 const tabPlaceholders = {
   yt: 'Colle ton lien YouTube ici…',
+  ig: 'Colle ton lien Instagram ici…',
   tt: 'Colle ton lien TikTok ici…'
 };
 

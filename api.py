@@ -1,7 +1,7 @@
 """
 api.py — Backend FastAPI pour AlphaConvert
 """
-import os, re, logging, unicodedata
+import os, re, logging, unicodedata, base64
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -22,16 +22,34 @@ app.add_middleware(
 DOWNLOAD_PATH = "/tmp/alphaconvert"
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
+# ── COOKIES ──────────────────────────────────────────────────────
+def write_cookie(env_var: str, filename: str):
+    val = os.environ.get(env_var, "")
+    if not val:
+        return None
+    try:
+        path = f"/tmp/{filename}"
+        with open(path, "wb") as f:
+            f.write(base64.b64decode(val))
+        logger.info(f"Cookie écrit : {path}")
+        return path
+    except Exception as e:
+        logger.warning(f"Cookie write failed ({filename}): {e}")
+        return None
+
+COOKIE_INSTAGRAM = write_cookie("COOKIES_INSTAGRAM", "ig_cookies.txt")
+logger.info(f"Instagram cookie: {bool(COOKIE_INSTAGRAM)}")
+
 
 def detect_platform(url: str) -> str:
     u = url.lower()
     if "youtube.com" in u or "youtu.be" in u:
-        return "YouTube"
+        return "youtube"
     elif "instagram.com" in u:
-        return "Instagram"
+        return "instagram"
     elif "tiktok.com" in u:
-        return "TikTok"
-    return "Inconnu"
+        return "tiktok"
+    return "unknown"
 
 
 def safe_filename(name: str) -> str:
@@ -43,8 +61,11 @@ def safe_filename(name: str) -> str:
 
 @app.get("/info")
 async def get_info(url: str):
+    platform = detect_platform(url)
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    if platform == "instagram" and COOKIE_INSTAGRAM:
+        opts["cookiefile"] = COOKIE_INSTAGRAM
     try:
-        opts = {"quiet": True, "no_warnings": True, "skip_download": True}
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
         return {
@@ -61,6 +82,7 @@ async def get_info(url: str):
 
 @app.get("/download")
 async def download(url: str, format: str = "mp4", quality: str = "720"):
+    platform = detect_platform(url)
     tpl = os.path.join(DOWNLOAD_PATH, "%(id)s.%(ext)s")
     base_opts = {
         "outtmpl": tpl,
@@ -69,16 +91,24 @@ async def download(url: str, format: str = "mp4", quality: str = "720"):
         "restrictfilenames": True,
     }
 
+    if platform == "instagram" and COOKIE_INSTAGRAM:
+        base_opts["cookiefile"] = COOKIE_INSTAGRAM
+        logger.info("Instagram : cookies activés")
+
     if format == "mp3":
         opts = {**base_opts, "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"}
     else:
-        qmap = {
-            "1080": "best[height<=1080][ext=mp4]/best[height<=1080]/best[ext=mp4]/best",
-            "720":  "best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best",
-            "480":  "best[height<=480][ext=mp4]/best[height<=480]/best[ext=mp4]/best",
-            "360":  "best[height<=360][ext=mp4]/best[height<=360]/best[ext=mp4]/best",
-        }
-        opts = {**base_opts, "format": qmap.get(quality, qmap["720"])}
+        if platform == "instagram":
+            fmt = "best[ext=mp4]/best"
+        else:
+            qmap = {
+                "1080": "best[height<=1080][ext=mp4]/best[height<=1080]/best[ext=mp4]/best",
+                "720":  "best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best",
+                "480":  "best[height<=480][ext=mp4]/best[height<=480]/best[ext=mp4]/best",
+                "360":  "best[height<=360][ext=mp4]/best[height<=360]/best[ext=mp4]/best",
+            }
+            fmt = qmap.get(quality, qmap["720"])
+        opts = {**base_opts, "format": fmt}
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:

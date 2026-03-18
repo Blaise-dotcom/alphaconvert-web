@@ -5,7 +5,7 @@ api.py — Backend FastAPI AlphaConvert
 import os, re, logging, unicodedata, base64, random, httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 import yt_dlp
 from yt_dlp.networking.impersonate import ImpersonateTarget
 
@@ -105,12 +105,13 @@ def _rapi_download(url: str, platform: str, format_type: str) -> tuple:
                 headers={"X-RapidAPI-Key": key, "X-RapidAPI-Host": "yt-api.p.rapidapi.com"}, timeout=30)
             if r.status_code == 200:
                 d = r.json()
-                formats = d.get("adaptiveFormats", []) + d.get("formats", [])
-                mp4s = [f for f in formats if f.get("mimeType", "").startswith("video/mp4")]
+                # Chercher d'abord dans formats (vidéo+audio combinés)
+                formats = d.get("formats", []) + d.get("adaptiveFormats", [])
+                mp4s = [f for f in formats if f.get("mimeType", "").startswith("video/mp4") and f.get("url")]
                 if mp4s:
                     best = sorted(mp4s, key=lambda x: x.get("height", 0), reverse=True)[0]
-                    if best.get("url"):
-                        return _save_stream(best["url"], d.get("title", "video"), ".mp4"), d.get("title", "video")
+                    # Retourner DIRECT_URL pour que le /download fasse un redirect
+                    return "DIRECT_URL:" + best["url"], d.get("title", "video")
 
         elif platform == "tiktok":
             r = httpx.get("https://tiktok-scraper7.p.rapidapi.com/video/info",

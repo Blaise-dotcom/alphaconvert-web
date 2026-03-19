@@ -228,7 +228,7 @@ document.getElementById('adminPassword').addEventListener('keydown', e => {
 });
 
 // ── NOTIFICATIONS NAVIGATEUR ─────────────────────────────────
-let prevUnread = 0;
+let prevUnread = parseInt(sessionStorage.getItem('prevUnread') || '0');
 
 function requestNotifPermission() {
   if ('Notification' in window && Notification.permission === 'default') {
@@ -282,6 +282,7 @@ function startListening() {
       sendBrowserNotif(last?.lastMessage || 'Un client attend une réponse.');
     }
     prevUnread = unread;
+    sessionStorage.setItem('prevUnread', unread);
   });
 }
 
